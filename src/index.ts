@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { cors } from 'hono/cors'
 
 type Bindings = {
 	CACHE: KVNamespace;
@@ -6,6 +7,15 @@ type Bindings = {
 }
 
 const app = new Hono<{ Bindings: Bindings }>();
+
+app.use('/*', cors({
+    origin: '*',
+    allowMethods: ['GET', 'OPTIONS'],
+    allowHeaders: ['Content-Type'],
+    exposeHeaders: ['Content-Length'],
+    maxAge: 600,
+    credentials: false,
+}));
 
 app.get("/:username", async c =>  {
 	const username = c.req.param("username");
@@ -70,6 +80,63 @@ app.get("/:username", async c =>  {
     }
     
     return c.json(metrics);
+})
+
+.get("/:username/badge", async c => {
+    const username = c.req.param("username");
+    
+    const metrics = await c.env.DB.prepare(`
+        SELECT * FROM github_metrics 
+        WHERE username = ?
+        ORDER BY updated_at DESC 
+        LIMIT 1
+    `).bind(username).first();
+    
+    if (!metrics) {
+        return c.json({ error: "Metrics not found" }, 404);
+    }
+
+    // Fetch individual badges
+    const badges = await Promise.all([
+        fetch(`https://img.shields.io/badge/Most_Used_Language-${metrics.most_used_language}-blue`),
+        fetch(`https://img.shields.io/badge/Stars-${metrics.total_stars}-yellow`),
+        fetch(`https://img.shields.io/badge/Forks-${metrics.total_forks}-green`),
+        fetch(`https://img.shields.io/badge/Repositories-${metrics.total_repos}-purple`)
+    ]);
+
+    // Get SVG content from each response
+    const svgContents = await Promise.all(
+        badges.map(response => response.text())
+    );
+
+    // Extract width from each SVG
+    const widths = svgContents.map(svg => {
+        const match = svg.match(/width="([^"]+)"/);
+        return match ? parseInt(match[1]) : 80;
+    });
+
+    // Calculate total width and positions
+    const totalWidth = widths.reduce((sum, width) => sum + width + 4, 0); // 4px spacing between badges
+    let currentX = 0;
+
+    // Combine SVGs into a single horizontal row
+    const combinedSVG = `
+        <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${totalWidth}" height="20">
+            ${svgContents.map((svg, index) => {
+                const innerSVG = svg.replace(/<\/?svg[^>]*>/g, '');
+                const position = currentX;
+                currentX += widths[index] + 2; // Update position for next badge
+                return `<g transform="translate(${position}, 0)">${innerSVG}</g>`;
+            }).join('')}
+        </svg>
+    `;
+
+    return new Response(combinedSVG, {
+        headers: {
+            'Content-Type': 'image/svg+xml',
+            'Cache-Control': 'public, max-age=600'
+        }
+    });
 });
 
 interface Repository {
