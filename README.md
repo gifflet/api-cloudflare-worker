@@ -6,12 +6,12 @@
 **Table of Contents**
 -----------------
 
-1. [Overview 🚀](#overview-🚀)
-2. [Features 🎉](#features-🎉)
-3. [Getting Started 📊](#getting-started-📊)
-4. [Usage 💻](#usage-💻)
-5. [Configuration 🔧](#configuration-🔧)
-6. [Wrangler Setup 📚](#wrangler-setup-📚)
+1. [Overview 🚀](#overview-)
+2. [Features 🎉](#features-)
+3. [Getting Started 📊](#getting-started-)
+4. [Usage 💻](#usage-)
+5. [Configuration 🔧](#configuration-)
+6. [Wrangler Setup 📚](#wrangler-setup-)
 
 **Overview 🚀**
 ------------
