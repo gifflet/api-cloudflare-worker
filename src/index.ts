@@ -19,50 +19,68 @@ app.use('/*', cors({
 
 app.get("/:username", async c =>  {
 	const username = c.req.param("username");
-	const cachedResponse = await c.env.CACHE.get(username, "json");
+	const page = parseInt(c.req.query('page') || '1');
+	const per_page = parseInt(c.req.query('per_page') || '30');
+	
+	const cachedResponse = await c.env.CACHE.get(`${username}_${page}_${per_page}`, "json");
 	
 	let repos;
+	let hasNextPage = false;
+	let hasPrevPage = false;
+
 	if (cachedResponse) {
-		repos = cachedResponse
+		repos = cachedResponse;
 	} else {
-		const response = await fetch(`https://api.github.com/users/${username}/repos`, {
+		const response = await fetch(
+			`https://api.github.com/users/${username}/repos?page=${page}&per_page=${per_page}`, {
 			headers: {
 				"User-Agent": "CF-Worker"
 			}
-		})
+		});
 		repos = await response.json();
 
 		if (!Array.isArray(repos)) {
-            return c.json({ error: "User not found or API error" }, 404);
-        }
+			return c.json({ error: "User not found or API error" }, 404);
+		}
 
-		await c.env.CACHE.put(username, JSON.stringify(repos));
+		// Get pagination information from response headers
+		const linkHeader = response.headers.get('Link');
+		hasNextPage = linkHeader?.includes('rel="next"') ?? false;
+		hasPrevPage = linkHeader?.includes('rel="prev"') ?? false;
+
+		await c.env.CACHE.put(`${username}_${page}_${per_page}`, JSON.stringify(repos));
 	}
 	
 	const metrics = await calculateMetrics(repos);
 
-    await c.env.DB.prepare(`
-        INSERT INTO github_metrics (username, total_stars, total_forks, total_repos, most_used_language)
-        VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(username) DO UPDATE SET
-            total_stars = excluded.total_stars,
-            total_forks = excluded.total_forks,
-            total_repos = excluded.total_repos,
-            most_used_language = excluded.most_used_language,
-            updated_at = CURRENT_TIMESTAMP
-    `).bind(
-        username,
-        metrics.totalStars,
-        metrics.totalForks,
-        metrics.totalRepos,
-        metrics.mostUsedLanguage
-    ).run();
+	await c.env.DB.prepare(`
+		INSERT INTO github_metrics (username, total_stars, total_forks, total_repos, most_used_language)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(username) DO UPDATE SET
+			total_stars = excluded.total_stars,
+			total_forks = excluded.total_forks,
+			total_repos = excluded.total_repos,
+			most_used_language = excluded.most_used_language,
+			updated_at = CURRENT_TIMESTAMP
+	`).bind(
+		username,
+		metrics.totalStars,
+		metrics.totalForks,
+		metrics.totalRepos,
+		metrics.mostUsedLanguage
+	).run();
 
 	return c.json({
-        username,
-        metrics,
-        repositories: repos
-    });	
+		username,
+		metrics,
+		repositories: repos,
+		pagination: {
+			current_page: page,
+			per_page,
+			has_next_page: hasNextPage,
+			has_previous_page: hasPrevPage
+		}
+	});	
 })
 
 .get("/:username/metrics", async c => {
