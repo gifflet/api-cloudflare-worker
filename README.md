@@ -1,6 +1,6 @@
 
 
-**API Cloudflare Worker**
+**Github Stats Cloudflare Worker**
 =====================
 
 **Table of Contents**
@@ -36,7 +36,7 @@ This project provides a simple API for retrieving GitHub user statistics, built 
 
 ### Installation
 
-1. Clone the repository: `git clone https://github.com/gifflet/api-cloudflare-worker`
+1. Clone the repository: `git clone https://github.com/gifflet/github-stats-cloudflare-worker`
 2. Install dependencies: `npm install`
 3. Configure the project: `cp wrangler.toml wrangler.toml.example` and update the `wrangler.toml` file with your Cloudflare API credentials
 
@@ -45,11 +45,50 @@ This project provides a simple API for retrieving GitHub user statistics, built 
 
 ### API Endpoints
 
-* `GET /:username`: Retrieves GitHub user statistics for the specified username
+#### Get User Repositories
+* `GET /:username/repositories`: Retrieves paginated GitHub repositories for the specified username
+* Query Parameters:
+  * `page`: Page number (default: 1)
+  * `per_page`: Items per page (default: 30)
+* Example: `curl https://your-worker-url.com/gifflet/repositories?page=1&per_page=30`
 
-### Example Usage
+#### Get User Metrics
+* `GET /:username/metrics`: Retrieves cached GitHub metrics for the specified username
+* Example: `curl https://your-worker-url.com/gifflet/metrics`
 
-* `curl https://your-worker-url.com/your-username`
+#### Get User Badge
+* `GET /:username/badge`: Generates a dynamic SVG badge with user statistics
+* Example: 
+  * Usage in markdown: `![GitHub Stats](https://your-worker-url.com/gifflet/badge)`
+  * Direct access: `curl https://your-worker-url.com/gifflet/badge`
+
+### Response Examples
+
+#### Repositories Endpoint
+```json
+{
+  "username": "gifflet",
+  "repositories": [...],
+  "pagination": {
+    "current_page": 1,
+    "per_page": 30,
+    "has_next_page": true,
+    "has_previous_page": false
+  }
+}
+```
+
+#### Metrics Endpoint
+```json
+{
+  "username": "gifflet",
+  "total_stars": 38,
+  "total_forks": 12,
+  "total_repos": 23,
+  "most_used_language": "TypeScript",
+  "updated_at": "2024-01-15T10:00:00.000Z"
+}
+```
 
 **Configuration 🔧**
 ----------------
