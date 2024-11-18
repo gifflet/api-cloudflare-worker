@@ -17,7 +17,7 @@ app.use('/*', cors({
     credentials: false,
 }));
 
-app.get("/:username", async c =>  {
+app.get("/:username/repositories", async c =>  {
 	const username = c.req.param("username")?.toLowerCase();
 	const page = parseInt(c.req.query('page') || '1');
 	const per_page = parseInt(c.req.query('per_page') || '30');
@@ -51,28 +51,8 @@ app.get("/:username", async c =>  {
 		await c.env.CACHE.put(`${username}_${page}_${per_page}`, JSON.stringify(repos));
 	}
 	
-	const metrics = await calculateMetrics(repos);
-
-	await c.env.DB.prepare(`
-		INSERT INTO github_metrics (username, total_stars, total_forks, total_repos, most_used_language)
-		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(username) DO UPDATE SET
-			total_stars = excluded.total_stars,
-			total_forks = excluded.total_forks,
-			total_repos = excluded.total_repos,
-			most_used_language = excluded.most_used_language,
-			updated_at = CURRENT_TIMESTAMP
-	`).bind(
-		username,
-		metrics.totalStars,
-		metrics.totalForks,
-		metrics.totalRepos,
-		metrics.mostUsedLanguage
-	).run();
-
 	return c.json({
 		username,
-		metrics,
 		repositories: repos,
 		pagination: {
 			current_page: page,
@@ -103,23 +83,59 @@ app.get("/:username", async c =>  {
 .get("/:username/badge", async c => {
     const username = c.req.param("username")?.toLowerCase();
     
-    const metrics = await c.env.DB.prepare(`
-        SELECT * FROM github_metrics 
-        WHERE username = ?
-        ORDER BY updated_at DESC 
-        LIMIT 1
-    `).bind(username).first();
+    // Try to get cached repositories first
+    const cachedRepos = await c.env.CACHE.get(`${username}_repositories`, "json");
     
-    if (!metrics) {
-        return c.json({ error: "Metrics not found" }, 404);
+    let repos;
+    if (cachedRepos) {
+        repos = cachedRepos;
+    } else {
+        // Fetch repositories if not cached
+        const response = await fetch(
+            `https://api.github.com/users/${username}/repos?per_page=1024`, {
+            headers: {
+                "User-Agent": "CF-Worker"
+            }
+        });
+        repos = await response.json();
+
+        if (!Array.isArray(repos)) {
+            return c.json({ error: "User not found or API error" }, 404);
+        }
+
+        // Cache the repositories for future use
+        await c.env.CACHE.put(`${username}_repositories`, JSON.stringify(repos), {
+            expirationTtl: 3600 // Cache for 1 hour
+        });
     }
+
+    // Calculate metrics
+    const metrics = await calculateMetrics(repos);
+
+    // Update metrics in database
+    await c.env.DB.prepare(`
+        INSERT INTO github_metrics (username, total_stars, total_forks, total_repos, most_used_language)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(username) DO UPDATE SET
+            total_stars = excluded.total_stars,
+            total_forks = excluded.total_forks,
+            total_repos = excluded.total_repos,
+            most_used_language = excluded.most_used_language,
+            updated_at = CURRENT_TIMESTAMP
+    `).bind(
+        username,
+        metrics.totalStars,
+        metrics.totalForks,
+        metrics.totalRepos,
+        metrics.mostUsedLanguage
+    ).run();
 
     // Fetch individual badges
     const badges = await Promise.all([
-        fetch(`https://img.shields.io/badge/Most_Used_Language-${metrics.most_used_language}-blue`),
-        fetch(`https://img.shields.io/badge/Stars-${metrics.total_stars}-yellow`),
-        fetch(`https://img.shields.io/badge/Forks-${metrics.total_forks}-green`),
-        fetch(`https://img.shields.io/badge/Repositories-${metrics.total_repos}-purple`)
+        fetch(`https://img.shields.io/badge/Most_Used_Language-${metrics.mostUsedLanguage}-blue`),
+        fetch(`https://img.shields.io/badge/Stars-${metrics.totalStars}-yellow`),
+        fetch(`https://img.shields.io/badge/Forks-${metrics.totalForks}-green`),
+        fetch(`https://img.shields.io/badge/Repositories-${metrics.totalRepos}-purple`)
     ]);
 
     // Get SVG content from each response
