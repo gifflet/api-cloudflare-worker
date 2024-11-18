@@ -93,6 +93,12 @@ app.get("/:username/repositories", async c =>  {
 .get("/:username/badge", async c => {
     const username = c.req.param("username")?.toLowerCase();
     
+    // Parâmetros de controle para exibição dos badges
+    const showLanguage = c.req.query('show_language') !== 'false';
+    const showStars = c.req.query('show_stars') !== 'false';
+    const showForks = c.req.query('show_forks') !== 'false';
+    const showRepos = c.req.query('show_repos') !== 'false';
+    
     // Try to get cached repositories first
     const cachedRepos = await c.env.CACHE.get(`${username}_repositories`, "json");
     
@@ -140,13 +146,16 @@ app.get("/:username/repositories", async c =>  {
         metrics.mostUsedLanguage
     ).run();
 
+    // Modificar a parte de fetch dos badges para considerar os parâmetros
+    const badgeRequests = [
+        showLanguage && fetch(`https://img.shields.io/badge/Most_Used_Language-${metrics.mostUsedLanguage}-blue`),
+        showStars && fetch(`https://img.shields.io/badge/Stars-${metrics.totalStars}-yellow`),
+        showForks && fetch(`https://img.shields.io/badge/Forks-${metrics.totalForks}-green`),
+        showRepos && fetch(`https://img.shields.io/badge/Repos-${metrics.totalRepos}-purple`)
+    ].filter(Boolean); // Remove os falsy values (quando o badge está desabilitado)
+
     // Fetch individual badges
-    const badges = await Promise.all([
-        fetch(`https://img.shields.io/badge/Most_Used_Language-${metrics.mostUsedLanguage}-blue`),
-        fetch(`https://img.shields.io/badge/Stars-${metrics.totalStars}-yellow`),
-        fetch(`https://img.shields.io/badge/Forks-${metrics.totalForks}-green`),
-        fetch(`https://img.shields.io/badge/Repositories-${metrics.totalRepos}-purple`)
-    ]);
+    const badges = await Promise.all(badgeRequests);
 
     // Get SVG content from each response
     const svgContents = await Promise.all(
@@ -160,7 +169,7 @@ app.get("/:username/repositories", async c =>  {
     });
 
     // Calculate total width and positions
-    const totalWidth = widths.reduce((sum, width) => sum + width + 4, 0); // 4px spacing between badges
+    const totalWidth = widths.reduce((sum, width) => sum + width + 2, 0); // 4px spacing between badges
     let currentX = 0;
 
     // Combine SVGs into a single horizontal row
