@@ -28,8 +28,11 @@ app.get("/:username/repositories", async c =>  {
 	let hasNextPage = false;
 	let hasPrevPage = false;
 
-	if (cachedResponse) {
-		repos = cachedResponse;
+	if (cachedResponse && 'repositories' in cachedResponse && 'pagination' in cachedResponse) {
+		const { repositories, pagination } = cachedResponse as CachedResponse;
+		repos = repositories;
+		hasNextPage = pagination.has_next_page;
+		hasPrevPage = pagination.has_previous_page;
 	} else {
 		const response = await fetch(
 			`https://api.github.com/users/${username}/repos?page=${page}&per_page=${per_page}`, {
@@ -48,7 +51,14 @@ app.get("/:username/repositories", async c =>  {
 		hasNextPage = linkHeader?.includes('rel="next"') ?? false;
 		hasPrevPage = linkHeader?.includes('rel="prev"') ?? false;
 
-		await c.env.CACHE.put(`${username}_${page}_${per_page}`, JSON.stringify(repos));
+		// Cache both repositories and pagination information
+		await c.env.CACHE.put(`${username}_${page}_${per_page}`, JSON.stringify({
+			repositories: repos,
+			pagination: {
+				has_next_page: hasNextPage,
+				has_previous_page: hasPrevPage
+			}
+		}));
 	}
 	
 	return c.json({
@@ -178,6 +188,15 @@ interface Repository {
     forks_count: number;
     language: string;
 }
+
+interface CachedResponse {
+    repositories: Repository[];
+    pagination: {
+        has_next_page: boolean;
+        has_previous_page: boolean;
+    };
+}
+
 
 async function calculateMetrics(repos: Repository[]) {
     const totalStars = repos.reduce((sum, repo) => sum + repo.stargazers_count, 0);
