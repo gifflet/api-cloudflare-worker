@@ -18,7 +18,7 @@ app.use('/*', cors({
 }));
 
 app.get("/:username", async c =>  {
-	const username = c.req.param("username");
+	const username = c.req.param("username")?.toLowerCase();
 	const page = parseInt(c.req.query('page') || '1');
 	const per_page = parseInt(c.req.query('per_page') || '30');
 	
@@ -84,7 +84,7 @@ app.get("/:username", async c =>  {
 })
 
 .get("/:username/metrics", async c => {
-    const username = c.req.param("username");
+    const username = c.req.param("username")?.toLowerCase();
     
     const metrics = await c.env.DB.prepare(`
         SELECT * FROM github_metrics 
@@ -101,7 +101,7 @@ app.get("/:username", async c =>  {
 })
 
 .get("/:username/badge", async c => {
-    const username = c.req.param("username");
+    const username = c.req.param("username")?.toLowerCase();
     
     const metrics = await c.env.DB.prepare(`
         SELECT * FROM github_metrics 
